@@ -20,5 +20,20 @@
         "obsidian": "latest",
         "tslib": "2.6.2",
         "typescript": "5.5.4"
-    }
+    },
+    "directories": {
+        "doc": "docs"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lavs9/obsidian-ghostty-terminal.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "bugs": {
+        "url": "https://github.com/lavs9/obsidian-ghostty-terminal/issues"
+    },
+    "homepage": "https://github.com/lavs9/obsidian-ghostty-terminal#readme"
 }
