@@ -19,6 +19,12 @@
 
 This is **not** a wrapper around xterm.js. You get real Ghostty VT semantics: proper Unicode (grapheme clusters, wide chars), 256-color + truecolor, OSC 8 hyperlinks, Kitty graphics protocol, and more.
 
+
+## Screenshots
+
+![alt text](images/screenshot.png)
+![alt text](images/screenshot2.png)
+
 ---
 
 ## Features
