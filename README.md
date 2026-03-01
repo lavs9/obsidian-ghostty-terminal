@@ -65,14 +65,14 @@ This is **not** a wrapper around xterm.js. You get real Ghostty VT semantics: pr
 2. Open BRAT settings → **Add Beta Plugin**
 3. Enter the repository URL:
    ```
-   https://github.com/mayanklavania/obsidian-ghostty-terminal
+   https://github.com/lavs9/obsidian-ghostty-terminal
    ```
 4. Click **Add Plugin** — BRAT will download and install it automatically
 5. Go to **Settings → Community plugins** and enable **Ghostty Terminal**
 
 ### Option B — Manual install from GitHub release
 
-1. Go to the [Releases page](https://github.com/mayanklavania/obsidian-ghostty-terminal/releases) and download the latest release assets:
+1. Go to the [Releases page](https://github.com/lavs9/obsidian-ghostty-terminal/releases) and download the latest release assets:
    - `main.js`
    - `manifest.json`
    - `styles.css`
@@ -91,7 +91,7 @@ This is **not** a wrapper around xterm.js. You get real Ghostty VT semantics: pr
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/mayanklavania/obsidian-ghostty-terminal
+git clone https://github.com/lavs9/obsidian-ghostty-terminal
 cd obsidian-ghostty-terminal
 
 # 2. Install dependencies
@@ -270,4 +270,4 @@ Pull requests are welcome! Please:
 
 ## License
 
-MIT © [Mayank Lavania](https://github.com/mayanklavania)
+MIT © [Mayank Lavania](https://github.com/lavs9)

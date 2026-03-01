@@ -1,11 +1,11 @@
 {
     "id": "ghostty-terminal",
     "name": "Ghostty Terminal",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "minAppVersion": "1.6.0",
     "description": "True Ghostty terminal (libghostty-vt WASM + node-pty) embedded in Obsidian – pixel-perfect integrated terminal with your real Ghostty config, multi-split support, and file-explorer context menu.",
     "author": "Mayank Lavania",
-    "authorUrl": "https://github.com/mayanklavania/obsidian-ghostty-terminal",
+    "authorUrl": "https://github.com/lavs9/obsidian-ghostty-terminal",
     "isDesktopOnly": true,
     "fundingUrl": ""
 }
