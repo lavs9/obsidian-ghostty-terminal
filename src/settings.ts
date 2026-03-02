@@ -65,7 +65,7 @@ export class GhosttySettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Config file path')
-            .setDesc('Path to your Ghostty config file. Leave blank to auto-detect.')
+            .setDesc('Path to your Ghostty config file (leave blank to auto-detect).')
             .addText(text =>
                 text
                     .setValue(this.plugin.settings.ghosttyConfigPath)
@@ -80,7 +80,7 @@ export class GhosttySettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Default shell')
-            .setDesc('Path to shell binary. Leave blank to use default shell.')
+            .setDesc('Path to shell binary (leave blank to use default shell).')
             .addText(text =>
                 text
                     .setPlaceholder('/bin/zsh')
@@ -94,7 +94,7 @@ export class GhosttySettingTab extends PluginSettingTab {
         // --- Font (overrides) ---
         new Setting(containerEl).setName('Font overrides').setHeading();
         containerEl.createEl('small', {
-            text: 'These override values from your Ghostty config. Leave blank or 0 to use Ghostty config values.',
+            text: 'These override values from your Ghostty config (leave blank or 0 to use Ghostty config values).',
             cls: 'setting-item-description',
         });
 
@@ -112,7 +112,7 @@ export class GhosttySettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Font size')
-            .setDesc('Override font size. Set to 0 to use default.')
+            .setDesc('Override font size (set to 0 to use default).')
             .addText(text =>
                 text
                     .setPlaceholder('15')

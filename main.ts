@@ -171,6 +171,7 @@ class GhosttyTerminalView extends ItemView {
     }
 
     async onOpen() {
+        await Promise.resolve();
         const container = this.containerEl.children[1] as HTMLElement;
         container.empty();
         container.addClass('ghostty-container');
