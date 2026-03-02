@@ -94,7 +94,7 @@ export class GhosttySettingTab extends PluginSettingTab {
         // --- Font (overrides) ---
         new Setting(containerEl).setName('Font overrides').setHeading();
         containerEl.createEl('small', {
-            text: 'These override values from your ghostty config (leave blank or 0 to use Ghostty config values).',
+            text: 'These override values from your ghostty config (leave blank or 0 to use ghostty config values).',
             cls: 'setting-item-description',
         });
 
