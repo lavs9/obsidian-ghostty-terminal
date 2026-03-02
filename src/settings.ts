@@ -65,7 +65,7 @@ export class GhosttySettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Config file path')
-            .setDesc('Path to your Ghostty config file (leave blank to auto-detect).')
+            .setDesc('Path to your ghostty config file (leave blank to auto-detect).')
             .addText(text =>
                 text
                     .setValue(this.plugin.settings.ghosttyConfigPath)
@@ -94,7 +94,7 @@ export class GhosttySettingTab extends PluginSettingTab {
         // --- Font (overrides) ---
         new Setting(containerEl).setName('Font overrides').setHeading();
         containerEl.createEl('small', {
-            text: 'These override values from your Ghostty config (leave blank or 0 to use Ghostty config values).',
+            text: 'These override values from your ghostty config (leave blank or 0 to use Ghostty config values).',
             cls: 'setting-item-description',
         });
 
