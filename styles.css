@@ -75,3 +75,11 @@
 .ghostty-hidden {
     display: none !important;
 }
+
+/* Used for pixel-perfect char dimensions measurement */
+.ghostty-char-measure {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    visibility: hidden;
+}

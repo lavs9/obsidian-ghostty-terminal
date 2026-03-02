@@ -39,21 +39,20 @@ export class GhosttySettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'Ghostty Terminal Settings' });
 
         // --- Display ---
-        containerEl.createEl('h3', { text: 'Display' });
+        new Setting(containerEl).setName('Display').setHeading();
 
         new Setting(containerEl)
             .setName('Default location')
             .setDesc('Where should the terminal launch by default?')
             .addDropdown(dropdown =>
                 dropdown
-                    .addOption('right', 'Right Sidebar')
-                    .addOption('left', 'Left Sidebar')
-                    .addOption('tab', 'New Tab')
-                    .addOption('split', 'New Split')
-                    .addOption('window', 'Popout Window')
+                    .addOption('right', 'Right sidebar')
+                    .addOption('left', 'Left sidebar')
+                    .addOption('tab', 'New tab')
+                    .addOption('split', 'New split')
+                    .addOption('window', 'Popout window')
                     .setValue(this.plugin.settings.defaultLocation)
                     .onChange(async (value: 'right' | 'left' | 'tab' | 'split' | 'window') => {
                         this.plugin.settings.defaultLocation = value;
@@ -62,14 +61,13 @@ export class GhosttySettingTab extends PluginSettingTab {
             );
 
         // --- Ghostty Config ---
-        containerEl.createEl('h3', { text: 'Ghostty Config' });
+        new Setting(containerEl).setName('Ghostty config').setHeading();
 
         new Setting(containerEl)
             .setName('Config file path')
-            .setDesc('Path to your Ghostty config file. Leave blank to auto-detect (~/.config/ghostty/config or macOS equivalent).')
+            .setDesc('Path to your Ghostty config file. Leave blank to auto-detect.')
             .addText(text =>
                 text
-                    .setPlaceholder('~/.config/ghostty/config')
                     .setValue(this.plugin.settings.ghosttyConfigPath)
                     .onChange(async value => {
                         this.plugin.settings.ghosttyConfigPath = value;
@@ -78,11 +76,11 @@ export class GhosttySettingTab extends PluginSettingTab {
             );
 
         // --- Shell ---
-        containerEl.createEl('h3', { text: 'Shell' });
+        new Setting(containerEl).setName('Shell').setHeading();
 
         new Setting(containerEl)
             .setName('Default shell')
-            .setDesc('Path to shell binary. Leave blank to use $SHELL environment variable.')
+            .setDesc('Path to shell binary. Leave blank to use default shell.')
             .addText(text =>
                 text
                     .setPlaceholder('/bin/zsh')
@@ -94,18 +92,17 @@ export class GhosttySettingTab extends PluginSettingTab {
             );
 
         // --- Font (overrides) ---
-        containerEl.createEl('h3', { text: 'Font Overrides' });
+        new Setting(containerEl).setName('Font overrides').setHeading();
         containerEl.createEl('small', {
-            text: 'These override values from your Ghostty config. Leave blank/zero to use Ghostty config values.',
+            text: 'These override values from your Ghostty config. Leave blank or 0 to use Ghostty config values.',
             cls: 'setting-item-description',
         });
 
         new Setting(containerEl)
             .setName('Font family')
-            .setDesc('Override font family (e.g. "JetBrains Mono").')
+            .setDesc('Override font family.')
             .addText(text =>
                 text
-                    .setPlaceholder('JetBrains Mono, Menlo, monospace')
                     .setValue(this.plugin.settings.fontFamilyOverride)
                     .onChange(async value => {
                         this.plugin.settings.fontFamilyOverride = value;
@@ -115,7 +112,7 @@ export class GhosttySettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Font size')
-            .setDesc('Override font size in pt. Set to 0 to use Ghostty config value.')
+            .setDesc('Override font size. Set to 0 to use default.')
             .addText(text =>
                 text
                     .setPlaceholder('15')
@@ -139,7 +136,7 @@ export class GhosttySettingTab extends PluginSettingTab {
             );
 
         // --- Performance ---
-        containerEl.createEl('h3', { text: 'Performance' });
+        new Setting(containerEl).setName('Performance').setHeading();
 
         new Setting(containerEl)
             .setName('Scrollback lines')

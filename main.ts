@@ -1,13 +1,12 @@
 import {
-    App,
     ItemView,
     Menu,
     Notice,
     Plugin,
     TAbstractFile,
     TFile,
-    TFolder,
     WorkspaceLeaf,
+    ViewStateResult,
 } from 'obsidian';
 import { init as initGhosttyWasm, Terminal, FitAddon } from 'ghostty-web';
 import * as os from 'os';
@@ -40,25 +39,25 @@ export default class GhosttyTerminalPlugin extends Plugin {
             this.wasmReady = true;
         } catch (e) {
             console.error('[GhosttyTerminal] Failed to init WASM:', e);
-            new Notice('Ghostty Terminal: WASM failed to load. Check console.', 8000);
+            new Notice('Wasm failed to load. Check console.', 8000);
         }
 
         // 4. Register view
         this.registerView(VIEW_TYPE_GHOSTTY, (leaf) => new GhosttyTerminalView(leaf, this));
 
         // 5. Ribbon icon
-        this.addRibbonIcon('terminal', 'Open Ghostty Terminal', () => this.activateView());
+        this.addRibbonIcon('terminal', 'Open terminal', () => this.activateView());
 
         // 6. Commands
         this.addCommand({
-            id: 'open-ghostty-terminal',
-            name: 'Open Ghostty Terminal',
+            id: 'open',
+            name: 'Open terminal',
             callback: () => this.activateView(),
         });
 
         this.addCommand({
-            id: 'open-ghostty-terminal-split',
-            name: 'Open Ghostty Terminal in new split',
+            id: 'open-split',
+            name: 'Open terminal in new split',
             callback: () => this.activateView(true, 'split'),
         });
 
@@ -71,7 +70,7 @@ export default class GhosttyTerminalPlugin extends Plugin {
 
                 menu.addItem((item) =>
                     item
-                        .setTitle('Open Ghostty Terminal here')
+                        .setTitle('Open terminal here')
                         .setIcon('terminal')
                         .onClick(() => this.activateViewAt(targetPath))
                 );
@@ -82,12 +81,13 @@ export default class GhosttyTerminalPlugin extends Plugin {
         this.addSettingTab(new GhosttySettingTab(this.app, this));
     }
 
-    async onunload() {
-        this.app.workspace.detachLeavesOfType(VIEW_TYPE_GHOSTTY);
+    onunload() {
+        // Nothing to detach as leaves should persist across reloads
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const data = await this.loadData() as Partial<GhosttyTerminalSettings> | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     }
 
     async saveSettings() {
@@ -115,14 +115,14 @@ export default class GhosttyTerminalPlugin extends Plugin {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_GHOSTTY);
 
         if (!forceNew && existing.length > 0) {
-            this.app.workspace.revealLeaf(existing[0]);
+            void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
 
         const location = locationOverride || this.settings.defaultLocation;
         const leaf = this.getNewLeaf(location);
         await leaf.setViewState({ type: VIEW_TYPE_GHOSTTY, active: true });
-        this.app.workspace.revealLeaf(leaf);
+        void this.app.workspace.revealLeaf(leaf);
     }
 
     /** Open a terminal seeded with a specific vault-relative cwd. */
@@ -133,7 +133,7 @@ export default class GhosttyTerminalPlugin extends Plugin {
             active: true,
             state: { cwd: vaultRelativePath },
         });
-        this.app.workspace.revealLeaf(leaf);
+        void this.app.workspace.revealLeaf(leaf);
     }
 }
 
@@ -163,11 +163,11 @@ class GhosttyTerminalView extends ItemView {
     getIcon(): string { return 'terminal'; }
 
     /** Called by Obsidian when this view is re-opened with saved state */
-    setState(state: Record<string, unknown>, result: unknown): Promise<void> {
+    setState(state: Record<string, unknown>, result: ViewStateResult): Promise<void> {
         if (state && typeof state.cwd === 'string') {
             this.cwdOverride = state.cwd;
         }
-        return super.setState(state, result as any);
+        return super.setState(state, result);
     }
 
     async onOpen() {
@@ -179,9 +179,9 @@ class GhosttyTerminalView extends ItemView {
         const wrapper = container.createDiv({ cls: 'ghostty-wrapper' });
 
         // Status bar for errors/restart
-        const statusBar = wrapper.createDiv({ cls: 'ghostty-status-bar ghostty-hidden' });
+        wrapper.createDiv({ cls: 'ghostty-status-bar ghostty-hidden' });
         this.restartBtn = wrapper.createDiv({ cls: 'ghostty-restart-btn ghostty-hidden' });
-        this.restartBtn.setText('⟳ Restart shell');
+        this.restartBtn.setText('Restart shell');
         this.restartBtn.onclick = () => this.spawnPty();
 
         this.termEl = wrapper.createDiv({ cls: 'ghostty-term' });
@@ -189,7 +189,7 @@ class GhosttyTerminalView extends ItemView {
         // Measure char dimensions first so we pass correct cols/rows to PTY
         this.measureCharDimensions();
 
-        await this.initTerminal();
+        this.initTerminal();
         this.spawnPty();
 
         this.resizeObserver = new ResizeObserver(() => this.handleResize());
@@ -198,7 +198,7 @@ class GhosttyTerminalView extends ItemView {
 
     // ── Terminal init ──────────────────────────────────────────────────────────
 
-    private async initTerminal() {
+    private initTerminal() {
         const gc = this.plugin.ghosttyConfig;
         const s = this.plugin.settings;
 
@@ -254,7 +254,7 @@ class GhosttyTerminalView extends ItemView {
     private spawnPty() {
         // Kill previous process
         if (this.ptyProcess) {
-            try { this.ptyProcess.kill(); } catch (_) { /* ignore */ }
+            try { this.ptyProcess.kill(); } catch { /* ignore */ }
             this.ptyProcess = null;
             this.resizePipe = null;
         }
@@ -269,13 +269,13 @@ class GhosttyTerminalView extends ItemView {
             (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh');
 
         // Resolve cwd
-        const vaultRoot = (this.app.vault.adapter as any).getBasePath?.() ?? os.homedir();
+        const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string, getFullPath?: (p: string) => string };
+        const vaultRoot = adapter.getBasePath?.() ?? os.homedir();
         const cwd = this.cwdOverride ? path.join(vaultRoot, this.cwdOverride) : vaultRoot;
 
         // Locate our bundled Python helper
         // manifest.dir is vault-relative (e.g. ".obsidian/plugins/ghostty-terminal")
-        const adapter = this.app.vault.adapter as any;
-        const pluginVaultDir: string | undefined = (this.plugin.manifest as any).dir;
+        const pluginVaultDir: string | undefined = this.plugin.manifest.dir;
         const helperPath = pluginVaultDir
             ? adapter.getFullPath?.(`${pluginVaultDir}/pty_helper.py`) ??
             path.join(vaultRoot, pluginVaultDir, 'pty_helper.py')
@@ -312,7 +312,8 @@ class GhosttyTerminalView extends ItemView {
                 }
             );
 
-            this.resizePipe = (this.ptyProcess.stdio as any)[3] as NodeJS.WritableStream;
+            const stdioArr = this.ptyProcess.stdio as unknown as NodeJS.WritableStream[];
+            this.resizePipe = stdioArr[3];
 
             this.ptyAlive = true;
             this.restartBtn?.addClass('ghostty-hidden');
@@ -373,7 +374,7 @@ class GhosttyTerminalView extends ItemView {
         if (!measure) {
             measure = document.createElement('canvas');
             measure.id = CHAR_MEASURE_ID;
-            measure.style.cssText = 'position:fixed;top:-9999px;left:-9999px;visibility:hidden;';
+            measure.className = 'ghostty-char-measure';
             document.body.appendChild(measure);
         }
 
@@ -428,15 +429,16 @@ class GhosttyTerminalView extends ItemView {
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-    async onClose() {
+    onClose(): Promise<void> {
         this.resizeObserver?.disconnect();
         if (this.ptyAlive) {
-            try { this.ptyProcess?.kill(); } catch (_) { /* ignore */ }
+            try { this.ptyProcess?.kill(); } catch { /* ignore */ }
         }
         this.terminal?.dispose?.();
         this.fitAddon?.dispose?.();
         this.ptyProcess = null;
         this.terminal = null;
         this.fitAddon = null;
+        return Promise.resolve();
     }
 }

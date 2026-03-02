@@ -94,32 +94,29 @@ export function parseGhosttyConfig(overridePath?: string): GhosttyConfig {
         try {
             if (fs.existsSync(candidate)) {
                 rawContent = fs.readFileSync(candidate, 'utf8');
-                console.log(`[GhosttyTerminal] Loaded config from: ${candidate}`);
+                console.debug(`[GhosttyTerminal] Loaded config from: ${candidate}`);
                 break;
             }
-        } catch (_) {
+        } catch {
             // skip unreadable paths
         }
     }
 
     if (!rawContent) {
-        console.log('[GhosttyTerminal] No Ghostty config found; using defaults.');
+        console.debug('[GhosttyTerminal] No Ghostty config found; using defaults.');
         return config;
     }
 
     const lines = rawContent.split('\n');
-    let currentSection: string | null = null;
-
-    for (const rawLine of lines) {
-        const line = rawLine.trim();
-
-        // Skip comments and blanks
-        if (!line || line.startsWith('#')) continue;
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine.length === 0 || trimmedLine.startsWith('#')) {
+            continue; // Skip empty lines and comments
+        }
 
         // Section header (Ghostty uses [section] for some sub-configs)
         const sectionMatch = line.match(/^\[(.+)\]$/);
         if (sectionMatch) {
-            currentSection = sectionMatch[1].toLowerCase();
             continue;
         }
 
@@ -134,13 +131,13 @@ export function parseGhosttyConfig(overridePath?: string): GhosttyConfig {
         const commentIdx = value.indexOf(' #');
         const cleanValue = commentIdx !== -1 ? value.slice(0, commentIdx).trim() : value;
 
-        applyConfigKey(config, key, cleanValue, currentSection);
+        applyConfigKey(config, key, cleanValue);
     }
 
     return config;
 }
 
-function applyConfigKey(config: GhosttyConfig, key: string, value: string, section: string | null) {
+function applyConfigKey(config: GhosttyConfig, key: string, value: string) {
     switch (key) {
         // Font
         case 'font-family':
@@ -225,6 +222,6 @@ const PALETTE_NAMES: (keyof GhosttyThemeColors)[] = [
 
 function applyPaletteColor(colors: GhosttyThemeColors, idx: number, color: string) {
     if (idx >= 0 && idx < PALETTE_NAMES.length) {
-        (colors as any)[PALETTE_NAMES[idx]] = color;
+        (colors as Record<string, string>)[PALETTE_NAMES[idx]] = color;
     }
 }
