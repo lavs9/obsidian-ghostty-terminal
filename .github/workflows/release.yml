@@ -33,5 +33,6 @@ jobs:
             main.js
             manifest.json
             styles.css
+            pty_helper.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

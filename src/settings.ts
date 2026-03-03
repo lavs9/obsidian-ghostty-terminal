@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS: GhosttyTerminalSettings = {
     defaultLocation: 'right',
     ghosttyConfigPath: '',
     defaultShell: '',
-    fontFamilyOverride: '',
+    fontFamilyOverride: 'JetBrains Mono, Menlo, Consolas, monospace',
     fontSizeOverride: 0,
     ligatures: true,
     scrollbackLines: 10000,
