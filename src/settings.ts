@@ -4,10 +4,10 @@ import type GhosttyTerminalPlugin from '../main';
 export interface GhosttyTerminalSettings {
     /** Location to open the terminal by default */
     defaultLocation: 'right' | 'left' | 'tab' | 'split' | 'window';
-    /** Override path to Ghostty config file. Empty = auto-detect. */
-    ghosttyConfigPath: string;
-    /** Default shell. Empty = use $SHELL env. */
-    defaultShell: string;
+    /** Candidate paths for Ghostty config file, tried in order. Empty = auto-detect. */
+    ghosttyConfigPaths: string[];
+    /** Candidate shell paths, tried in order. First existing path wins. */
+    shellPaths: string[];
     /** Override font family (empty = read from Ghostty config). */
     fontFamilyOverride: string;
     /** Override font size (0 = read from Ghostty config). */
@@ -20,8 +20,8 @@ export interface GhosttyTerminalSettings {
 
 export const DEFAULT_SETTINGS: GhosttyTerminalSettings = {
     defaultLocation: 'right',
-    ghosttyConfigPath: '',
-    defaultShell: '',
+    ghosttyConfigPaths: [],
+    shellPaths: [],
     fontFamilyOverride: 'JetBrains Mono, Menlo, Consolas, monospace',
     fontSizeOverride: 0,
     ligatures: true,
@@ -63,33 +63,32 @@ export class GhosttySettingTab extends PluginSettingTab {
         // --- Ghostty Config ---
         new Setting(containerEl).setName('Ghostty config').setHeading();
 
-        new Setting(containerEl)
-            .setName('Config file path')
-            .setDesc('Path to your ghostty config file (leave blank to auto-detect).')
-            .addText(text =>
-                text
-                    .setValue(this.plugin.settings.ghosttyConfigPath)
-                    .onChange(async value => {
-                        this.plugin.settings.ghosttyConfigPath = value;
-                        await this.plugin.saveSettings();
-                    })
-            );
+        this.renderPathList(
+            containerEl,
+            'Config file paths',
+            'Paths to ghostty config file, tried in order. Leave empty to auto-detect.',
+            '/home/user/.config/ghostty/config',
+            () => this.plugin.settings.ghosttyConfigPaths,
+            async paths => {
+                this.plugin.settings.ghosttyConfigPaths = paths;
+                await this.plugin.saveSettings();
+            }
+        );
 
         // --- Shell ---
         new Setting(containerEl).setName('Shell').setHeading();
 
-        new Setting(containerEl)
-            .setName('Default shell')
-            .setDesc('Path to shell binary (leave blank to use default shell).')
-            .addText(text =>
-                text
-                    .setPlaceholder('/bin/zsh')
-                    .setValue(this.plugin.settings.defaultShell)
-                    .onChange(async value => {
-                        this.plugin.settings.defaultShell = value;
-                        await this.plugin.saveSettings();
-                    })
-            );
+        this.renderPathList(
+            containerEl,
+            'Shell paths',
+            'Paths to shell binary, tried in order. First existing path is used. Leave empty to use $SHELL.',
+            '/bin/zsh',
+            () => this.plugin.settings.shellPaths,
+            async paths => {
+                this.plugin.settings.shellPaths = paths;
+                await this.plugin.saveSettings();
+            }
+        );
 
         // --- Font (overrides) ---
         new Setting(containerEl).setName('Font overrides').setHeading();
@@ -150,5 +149,61 @@ export class GhosttySettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     })
             );
+    }
+
+    private renderPathList(
+        containerEl: HTMLElement,
+        name: string,
+        desc: string,
+        placeholder: string,
+        getPaths: () => string[],
+        setPaths: (paths: string[]) => Promise<void>,
+    ): void {
+        new Setting(containerEl)
+            .setName(name)
+            .setDesc(desc);
+
+        const listEl = containerEl.createDiv({ cls: 'ghostty-path-list' });
+
+        const render = () => {
+            listEl.empty();
+            const paths = getPaths();
+            paths.forEach((p, i) => {
+                new Setting(listEl)
+                    .setName(`Path ${i + 1}`)
+                    .addText(text =>
+                        text
+                            .setPlaceholder(placeholder)
+                            .setValue(p)
+                            .onChange(async value => {
+                                const updated = [...getPaths()];
+                                updated[i] = value;
+                                await setPaths(updated);
+                            })
+                    )
+                    .addExtraButton(btn =>
+                        btn
+                            .setIcon('trash')
+                            .setTooltip('Remove')
+                            .onClick(async () => {
+                                const updated = getPaths().filter((_, j) => j !== i);
+                                await setPaths(updated);
+                                render();
+                            })
+                    );
+            });
+
+            new Setting(listEl)
+                .addButton(btn =>
+                    btn
+                        .setButtonText('+ Add path')
+                        .onClick(async () => {
+                            await setPaths([...getPaths(), '']);
+                            render();
+                        })
+                );
+        };
+
+        render();
     }
 }

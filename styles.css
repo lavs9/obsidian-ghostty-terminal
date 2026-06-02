@@ -10,8 +10,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #1e1e2e;
-    /* fallback; overridden by Ghostty theme */
+    background: transparent; /* set dynamically from theme */
     padding: 0 !important;
     margin: 0 !important;
 }
@@ -26,6 +25,8 @@
     position: relative;
     padding: 0 10px;
     /* Give text some breathing room on edges */
+    /* Isolate layout so IME composition events don't cause ancestor scroll */
+    contain: layout;
 }
 
 /* The xterm.js/ghostty-web canvas host – flex-grow to consume all space */
@@ -34,7 +35,18 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
+    position: relative;
 }
+
+/* Take canvas out of normal flow so the contenteditable caret in termEl
+   lands at (0,0) — top of terminal — instead of below the canvas.
+   This prevents Chromium from scrolling ancestors during Korean/CJK IME. */
+.ghostty-term canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
 
 /* Make xterm internal elements fill their container */
 .ghostty-term .xterm,
@@ -43,6 +55,9 @@
     width: 100% !important;
     height: 100% !important;
 }
+
+
+
 
 /* Status/restart bar at top (hidden by default) */
 .ghostty-status-bar {

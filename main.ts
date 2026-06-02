@@ -21,6 +21,15 @@ import ptyHelperCode from './pty_helper.py';
 
 const VIEW_TYPE_GHOSTTY = 'ghostty-terminal';
 
+/** Returns the first path in the list that exists on the filesystem. Falls back to the last entry. */
+function resolveFirstExisting(candidates: string[]): string {
+    const filtered = candidates.filter(p => p.length > 0);
+    for (const p of filtered) {
+        try { if (fs.existsSync(p)) return p; } catch { /* skip */ }
+    }
+    return filtered[filtered.length - 1] ?? '/bin/sh';
+}
+
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
 export default class GhosttyTerminalPlugin extends Plugin {
@@ -33,7 +42,9 @@ export default class GhosttyTerminalPlugin extends Plugin {
         await this.loadSettings();
 
         // 2. Parse Ghostty config once at boot
-        this.ghosttyConfig = parseGhosttyConfig(this.settings.ghosttyConfigPath || undefined);
+        this.ghosttyConfig = parseGhosttyConfig(
+            this.settings.ghosttyConfigPaths.length > 0 ? this.settings.ghosttyConfigPaths : undefined
+        );
 
         // 3. Boot Ghostty WASM
         try {
@@ -92,8 +103,22 @@ export default class GhosttyTerminalPlugin extends Plugin {
     }
 
     async loadSettings() {
-        const data = await this.loadData() as Partial<GhosttyTerminalSettings> | null;
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+        const raw = await this.loadData() as Record<string, unknown> | null;
+        const data = raw ?? {};
+
+        // Migrate legacy single-string fields to arrays
+        const legacyShell = data['defaultShell'] as string | undefined;
+        const legacyConfig = data['ghosttyConfigPath'] as string | undefined;
+        if (!data['shellPaths'] && legacyShell) {
+            data['shellPaths'] = [legacyShell];
+            delete data['defaultShell'];
+        }
+        if (!data['ghosttyConfigPaths'] && legacyConfig) {
+            data['ghosttyConfigPaths'] = [legacyConfig];
+            delete data['ghosttyConfigPath'];
+        }
+
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data) as GhosttyTerminalSettings;
     }
 
     async saveSettings() {
@@ -153,6 +178,8 @@ class GhosttyTerminalView extends ItemView {
     private ptyProcess: child_process.ChildProcess | null = null;
     private resizePipe: import('stream').Writable | null = null;
     private resizeObserver: ResizeObserver | null = null;
+    private resizeFollowUpId: number | null = null;
+    private isComposing = false;
     private charWidth = 9;
     private charHeight = 18;
     private termEl: HTMLElement | null = null;
@@ -193,11 +220,16 @@ class GhosttyTerminalView extends ItemView {
 
         this.termEl = wrapper.createDiv({ cls: 'ghostty-term' });
 
+
         // Measure char dimensions first so we pass correct cols/rows to PTY
         this.measureCharDimensions();
 
         this.initTerminal();
-        this.spawnPty();
+
+        // Defer spawnPty so that Obsidian's setState() runs first.
+        // setViewState() calls onOpen() then setState(), so a macrotask
+        // here ensures cwdOverride is set before the PTY starts.
+        window.setTimeout(() => { if (this.terminal) this.spawnPty(); }, 0);
 
         this.resizeObserver = new ResizeObserver(() => this.handleResize());
         this.resizeObserver.observe(this.termEl);
@@ -242,6 +274,7 @@ class GhosttyTerminalView extends ItemView {
             scrollback,
             cursorStyle: gc.cursorStyle ?? 'block',
             cursorBlink: gc.cursorBlink ?? false,
+            ...( { ligatures: s.ligatures } as object ),
         });
 
         this.fitAddon = new FitAddon();
@@ -249,9 +282,24 @@ class GhosttyTerminalView extends ItemView {
 
         this.terminal.open(this.termEl!);
 
+        // Sync container background with theme to avoid a dark fringe around the terminal
+        const container = this.containerEl.children[1] as HTMLElement;
+        if (container) container.style.background = theme.background;
+
         // Build the full keybind list: Ghostty defaults + user config.
         // User config entries override defaults for the same key combo.
         const effectiveKeybinds = buildEffectiveKeybinds(this.plugin.ghosttyConfig.keybinds);
+
+        this.termEl!.addEventListener('compositionstart', () => {
+            this.isComposing = true;
+        }, true);
+        this.termEl!.addEventListener('compositionend', () => {
+            this.isComposing = false;
+            if (this.fitAddon) {
+                this.fitAddon.fit();
+                this.sendResizeToPty();
+            }
+        }, true);
 
         // Intercept keybinds in capture phase so Obsidian's global handlers
         // never see the key events meant for the terminal.
@@ -264,7 +312,7 @@ class GhosttyTerminalView extends ItemView {
             if (action === 'copy_to_clipboard') {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                const text = window.getSelection()?.toString() ?? '';
+                const text = (this.terminal as any)?.getSelection?.() ?? '';
                 if (text) navigator.clipboard.writeText(text).catch(() => {/* ignore */});
 
             } else if (action === 'paste_from_clipboard') {
@@ -310,11 +358,14 @@ class GhosttyTerminalView extends ItemView {
         const gc = this.plugin.ghosttyConfig;
         const s = this.plugin.settings;
 
-        const shell =
-            s.defaultShell ||
-            gc.shell ||
-            process.env.SHELL ||
-            (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh');
+        const shell = resolveFirstExisting(
+            [
+                ...s.shellPaths,
+                ...(gc.shell ? [gc.shell] : []),
+                process.env.SHELL ?? '',
+                process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh',
+            ]
+        );
 
         // Resolve cwd
         const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string, getFullPath?: (p: string) => string };
@@ -351,7 +402,11 @@ class GhosttyTerminalView extends ItemView {
             return;
         }
 
-        const { cols, rows } = this.terminalDimensions();
+        // Use the WASM terminal's actual cols/rows as the source of truth.
+        // terminalDimensions() recalculates independently and can disagree with
+        // the terminal after fitAddon.fit(), causing an initial size mismatch.
+        const cols = this.terminal?.cols ?? this.terminalDimensions().cols;
+        const rows = this.terminal?.rows ?? this.terminalDimensions().rows;
         const python = process.platform === 'darwin' ? 'python3' : 'python3';
 
         try {
@@ -377,6 +432,11 @@ class GhosttyTerminalView extends ItemView {
             this.resizePipe = stdioArr[3];
 
             this.ptyAlive = true;
+
+            // Immediately set the PTY window size via TIOCSWINSZ so zsh reads the
+            // correct size from the start. Without this the PTY is 0×0 and zsh
+            // falls back to the COLUMNS env var, which may still differ visually.
+            this.sendResizeToPty();
             this.restartBtn?.addClass('ghostty-hidden');
 
             // PTY output → terminal display
@@ -470,17 +530,30 @@ class GhosttyTerminalView extends ItemView {
 
     private handleResize() {
         if (!this.terminal || !this.fitAddon) return;
+        if (this.isComposing) return;
 
-        // Let the addon do the layout fitting
+        // ResizeObserver fires post-layout, so clientWidth/clientHeight are already
+        // correct here. Call fit() immediately so SIGWINCH reaches the shell before
+        // the user types the next command (avoids the 16ms RAF delay that caused
+        // zsh to redraw with stale COLUMNS on immediate Ctrl+C after resize).
         this.fitAddon.fit();
+        this.sendResizeToPty();
 
-        // PTY dimensions are kept in sync natively by terminal resize, but we need
-        // to re-calculate columns/rows to pass to the PTY explicitly via our pipe
-        const { cols, rows } = this.terminal;
+        // FitAddon has a 50ms internal _isResizing guard that blocks re-entrant
+        // calls during rapid drag. Follow-up fires 60ms after the last resize event
+        // (once the guard has expired) to apply the final dimensions if skipped.
+        if (this.resizeFollowUpId !== null) clearTimeout(this.resizeFollowUpId);
+        this.resizeFollowUpId = window.setTimeout(() => {
+            this.resizeFollowUpId = null;
+            if (!this.terminal || !this.fitAddon) return;
+            this.fitAddon.fit();
+            this.sendResizeToPty();
+        }, 60);
+    }
 
+    private sendResizeToPty() {
+        const { cols, rows } = this.terminal!;
         if (this.ptyAlive && this.resizePipe) {
-            // Send 4-byte big-endian resize frame (rows uint16, cols uint16)
-            // Python's pty_helper.py reads this on fd 3 and calls TIOCSWINSZ
             const frame = Buffer.alloc(4);
             frame.writeUInt16BE(rows, 0);
             frame.writeUInt16BE(cols, 2);
@@ -519,6 +592,7 @@ class GhosttyTerminalView extends ItemView {
 
     onClose(): Promise<void> {
         this.resizeObserver?.disconnect();
+        if (this.resizeFollowUpId !== null) clearTimeout(this.resizeFollowUpId);
         this.killPty();
         this.terminal?.dispose?.();
         this.fitAddon?.dispose?.();
@@ -532,11 +606,17 @@ class GhosttyTerminalView extends ItemView {
 
 // Ghostty's built-in defaults that we always enforce.
 const GHOSTTY_BUILTIN_KEYBINDS: GhosttyKeybind[] = [
-    { mods: new Set(['super']), key: 'c',     action: 'copy_to_clipboard' },
-    { mods: new Set(['super']), key: 'v',     action: 'paste_from_clipboard' },
+    { mods: new Set(['super']),          key: 'c',     action: 'copy_to_clipboard' },
+    { mods: new Set(['super']),          key: 'v',     action: 'paste_from_clipboard' },
+    { mods: new Set(['ctrl', 'shift']),  key: 'c',     action: 'copy_to_clipboard' },
+    { mods: new Set(['ctrl', 'shift']),  key: 'v',     action: 'paste_from_clipboard' },
     // shift+enter / cmd+enter → kitty keyboard protocol newlines (used by Claude etc.)
     { mods: new Set(['shift']), key: 'enter', action: 'text:\x1b[13;2u' },
     { mods: new Set(['super']), key: 'enter', action: 'text:\x1b[13;9u' },
+    // Home/End: send SS3 sequences matching xterm-256color terminfo (khome=\EOH, kend=\EOF)
+    // so that oh-my-zsh / zsh ZLE recognizes them via ${terminfo[khome]}/${terminfo[kend]}
+    { mods: new Set([]), key: 'home', action: 'text:\x1bOH' },
+    { mods: new Set([]), key: 'end',  action: 'text:\x1bOF' },
 ];
 
 /**

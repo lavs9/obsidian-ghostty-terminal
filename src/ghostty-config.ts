@@ -51,8 +51,8 @@ export interface GhosttyConfig {
 }
 
 /** Returns candidate config file paths in priority order */
-function getCandidatePaths(overridePath?: string): string[] {
-    if (overridePath) return [overridePath];
+function getCandidatePaths(overridePaths?: string[]): string[] {
+    if (overridePaths && overridePaths.length > 0) return overridePaths;
 
     const candidates: string[] = [];
 
@@ -91,10 +91,10 @@ function normalizeColor(val: string): string {
  * Parse a Ghostty config file.
  * Ghostty config is line-delimited key = value (comments with #).
  */
-export function parseGhosttyConfig(overridePath?: string): GhosttyConfig {
+export function parseGhosttyConfig(overridePaths?: string[]): GhosttyConfig {
     const config: GhosttyConfig = { colors: {}, keybinds: [] };
 
-    const candidates = getCandidatePaths(overridePath);
+    const candidates = getCandidatePaths(overridePaths).filter(p => p.trim().length > 0);
     let rawContent: string | null = null;
 
     for (const candidate of candidates) {
@@ -141,7 +141,54 @@ export function parseGhosttyConfig(overridePath?: string): GhosttyConfig {
         applyConfigKey(config, key, cleanValue);
     }
 
+    // Resolve theme: load colors from theme file, letting explicit config values win
+    if (config.theme) {
+        const themeColors = loadThemeColors(config.theme);
+        if (themeColors) {
+            config.colors = { ...themeColors, ...config.colors };
+        }
+    }
+
     return config;
+}
+
+/**
+ * Locate and parse a Ghostty theme file by name.
+ * Search order: user themes → system themes → Flatpak host system themes.
+ */
+function loadThemeColors(themeName: string): GhosttyThemeColors | null {
+    const candidates = [
+        path.join(os.homedir(), '.config', 'ghostty', 'themes', themeName),
+        '/usr/share/ghostty/themes/' + themeName,
+        '/run/host/usr/share/ghostty/themes/' + themeName,
+        // macOS: Ghostty app bundle (system-wide and user Applications)
+        `/Applications/Ghostty.app/Contents/Resources/ghostty/themes/${themeName}`,
+        path.join(os.homedir(), 'Applications', 'Ghostty.app', 'Contents', 'Resources', 'ghostty', 'themes', themeName),
+    ];
+
+    for (const themePath of candidates) {
+        try {
+            if (!fs.existsSync(themePath)) continue;
+            const content = fs.readFileSync(themePath, 'utf8');
+            const tempConfig: GhosttyConfig = { colors: {}, keybinds: [] };
+            for (const line of content.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+                const eqIdx = line.indexOf('=');
+                if (eqIdx === -1) continue;
+                const key = line.slice(0, eqIdx).trim().toLowerCase();
+                const value = line.slice(eqIdx + 1).trim();
+                const commentIdx = value.indexOf(' #');
+                const cleanValue = commentIdx !== -1 ? value.slice(0, commentIdx).trim() : value;
+                applyConfigKey(tempConfig, key, cleanValue);
+            }
+            console.debug(`[GhosttyTerminal] Loaded theme colors from: ${themePath}`);
+            return tempConfig.colors;
+        } catch {
+            // skip unreadable paths
+        }
+    }
+    return null;
 }
 
 function applyConfigKey(config: GhosttyConfig, key: string, value: string) {
