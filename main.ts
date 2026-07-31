@@ -537,6 +537,9 @@ const GHOSTTY_BUILTIN_KEYBINDS: GhosttyKeybind[] = [
     // shift+enter / cmd+enter → kitty keyboard protocol newlines (used by Claude etc.)
     { mods: new Set(['shift']), key: 'enter', action: 'text:\x1b[13;2u' },
     { mods: new Set(['super']), key: 'enter', action: 'text:\x1b[13;9u' },
+    // shift+tab → standard back-tab (CSI Z), so TUIs can tell it apart from Tab
+    // (Ghostty's own key encoder currently collapses shift+tab to a plain tab)
+    { mods: new Set(['shift']), key: 'tab', action: 'text:\x1b[Z' },
 ];
 
 /**
