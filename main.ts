@@ -249,6 +249,33 @@ class GhosttyTerminalView extends ItemView {
 
         this.terminal.open(this.termEl!);
 
+        // When the foreground app has enabled mouse tracking (Claude Code,
+        // htop, vim, ...), report wheel events to it as SGR mouse sequences,
+        // like a real terminal would. Without this, ghostty-web falls back to
+        // faking arrow keys on the alternate screen, which mouse-aware TUIs
+        // interpret as cursor/history movement instead of scrolling.
+        // Returning false keeps ghostty-web's normal scrollback handling
+        // whenever mouse tracking is off.
+        this.terminal.attachCustomWheelEventHandler((event: WheelEvent) => {
+            const term = this.terminal;
+            if (!term || !term.hasMouseTracking()) return false;
+
+            const rect = this.termEl!.getBoundingClientRect();
+            const col = Math.min(term.cols, Math.max(1,
+                Math.floor((event.clientX - rect.left) / this.charWidth) + 1));
+            const row = Math.min(term.rows, Math.max(1,
+                Math.floor((event.clientY - rect.top) / this.charHeight) + 1));
+
+            const button = event.deltaY > 0 ? 65 : 64; // SGR wheel down / up
+            // Same pixel-delta → line-count heuristic ghostty-web uses for
+            // its arrow-key fallback (~33px per line, capped at 5).
+            const count = Math.max(1, Math.min(5, Math.round(Math.abs(event.deltaY) / 33)));
+            for (let i = 0; i < count; i++) {
+                term.input(`\x1b[<${button};${col};${row}M`);
+            }
+            return true;
+        });
+
         // Build the full keybind list: Ghostty defaults + user config.
         // User config entries override defaults for the same key combo.
         const effectiveKeybinds = buildEffectiveKeybinds(this.plugin.ghosttyConfig.keybinds);
