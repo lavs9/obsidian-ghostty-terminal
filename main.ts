@@ -157,6 +157,7 @@ class GhosttyTerminalView extends ItemView {
     private charHeight = 18;
     private termEl: HTMLElement | null = null;
     private ptyAlive = false;
+    private wheelDelta = 0;
     private restartBtn: HTMLElement | null = null;
     private cwdOverride: string | null = null;
 
@@ -248,6 +249,54 @@ class GhosttyTerminalView extends ItemView {
         this.terminal.loadAddon(this.fitAddon);
 
         this.terminal.open(this.termEl!);
+
+        // When the foreground app has enabled mouse tracking (Claude Code,
+        // htop, vim, ...), report wheel events to it as SGR mouse sequences,
+        // like a real terminal would. Without this, ghostty-web falls back to
+        // faking arrow keys on the alternate screen, which mouse-aware TUIs
+        // interpret as cursor/history movement instead of scrolling.
+        // Returning false keeps ghostty-web's normal scrollback handling
+        // whenever mouse tracking is off.
+        this.terminal.attachCustomWheelEventHandler((event: WheelEvent) => {
+            const term = this.terminal;
+            if (!term || !term.hasMouseTracking() || !term.getMode(1006)) {
+                this.wheelDelta = 0;
+                return false;
+            }
+
+            const deltaLines = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+                ? event.deltaY
+                : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+                    ? event.deltaY * term.rows
+                    : event.deltaY / Math.max(1, this.charHeight);
+            if (!deltaLines) return true;
+
+            if (this.wheelDelta && Math.sign(this.wheelDelta) !== Math.sign(deltaLines)) {
+                this.wheelDelta = 0;
+            }
+            this.wheelDelta += deltaLines;
+
+            const steps = Math.max(-5, Math.min(5, Math.trunc(this.wheelDelta)));
+            if (!steps) return true;
+            this.wheelDelta -= steps;
+
+            const rect = this.termEl!.getBoundingClientRect();
+            const col = Math.min(term.cols, Math.max(1,
+                Math.floor((event.clientX - rect.left) / this.charWidth) + 1));
+            const row = Math.min(term.rows, Math.max(1,
+                Math.floor((event.clientY - rect.top) / this.charHeight) + 1));
+
+            const modifiers =
+                (event.shiftKey ? 4 : 0) |
+                (event.altKey ? 8 : 0) |
+                (event.ctrlKey ? 16 : 0);
+            const button = (steps < 0 ? 64 : 65) + modifiers;
+
+            for (let i = 0; i < Math.abs(steps); i++) {
+                term.input(`\x1b[<${button};${col};${row}M`, true);
+            }
+            return true;
+        });
 
         // Build the full keybind list: Ghostty defaults + user config.
         // User config entries override defaults for the same key combo.
@@ -524,6 +573,7 @@ class GhosttyTerminalView extends ItemView {
         this.fitAddon?.dispose?.();
         this.terminal = null;
         this.fitAddon = null;
+        this.wheelDelta = 0;
         return Promise.resolve();
     }
 }
