@@ -361,7 +361,7 @@ class GhosttyTerminalView extends ItemView {
             if (button === null || !sendMouseEvent(event, button)) return;
 
             this.pressedMouseButton = button;
-            terminal.focus();
+            termEl.querySelector('textarea')?.focus();
             consume(event);
         }, { capture: true, signal });
 
