@@ -159,6 +159,9 @@ class GhosttyTerminalView extends ItemView {
     private ptyAlive = false;
     private restartBtn: HTMLElement | null = null;
     private cwdOverride: string | null = null;
+    private pressedMouseButton: number | null = null;
+    private mouseAbortController: AbortController | null = null;
+    private wheelDelta = 0;
 
     constructor(leaf: WorkspaceLeaf, private plugin: GhosttyTerminalPlugin) {
         super(leaf);
@@ -248,6 +251,7 @@ class GhosttyTerminalView extends ItemView {
         this.terminal.loadAddon(this.fitAddon);
 
         this.terminal.open(this.termEl!);
+        this.installMouseTracking();
 
         // Build the full keybind list: Ghostty defaults + user config.
         // User config entries override defaults for the same key combo.
@@ -297,6 +301,119 @@ class GhosttyTerminalView extends ItemView {
 
         // Re-measure now that font is applied (canvas measurement is more accurate)
         this.measureCharDimensions();
+    }
+
+    private installMouseTracking() {
+        const terminal = this.terminal;
+        const termEl = this.termEl;
+        if (!terminal || !termEl) return;
+
+        this.mouseAbortController?.abort();
+        this.mouseAbortController = new AbortController();
+        const { signal } = this.mouseAbortController;
+
+        const mouseButtonCode = (button: number): number | null => {
+            if (button === 0) return 0;
+            if (button === 1) return 1;
+            if (button === 2) return 2;
+            return null;
+        };
+
+        const sendMouseEvent = (
+            event: MouseEvent,
+            button: number,
+            release = false,
+            motion = false,
+        ): boolean => {
+            if (!terminal.hasMouseTracking() || !terminal.getMode(1006)) return false;
+
+            const canvas = termEl.querySelector('canvas') ?? termEl;
+            const bounds = canvas.getBoundingClientRect();
+            const cellWidth = bounds.width / terminal.cols;
+            const cellHeight = bounds.height / terminal.rows;
+            if (cellWidth <= 0 || cellHeight <= 0) return false;
+
+            const col = Math.min(
+                terminal.cols,
+                Math.max(1, Math.floor((event.clientX - bounds.left) / cellWidth) + 1),
+            );
+            const row = Math.min(
+                terminal.rows,
+                Math.max(1, Math.floor((event.clientY - bounds.top) / cellHeight) + 1),
+            );
+            const modifiers =
+                (event.shiftKey ? 4 : 0) |
+                (event.altKey ? 8 : 0) |
+                (event.ctrlKey ? 16 : 0);
+            const code = button + modifiers + (motion ? 32 : 0);
+            terminal.input(`\x1b[<${code};${col};${row}${release ? 'm' : 'M'}`, true);
+            return true;
+        };
+
+        const consume = (event: Event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+        };
+
+        termEl.addEventListener('mousedown', (event: MouseEvent) => {
+            const button = mouseButtonCode(event.button);
+            if (button === null || !sendMouseEvent(event, button)) return;
+
+            this.pressedMouseButton = button;
+            terminal.focus();
+            consume(event);
+        }, { capture: true, signal });
+
+        termEl.addEventListener('mousemove', (event: MouseEvent) => {
+            const reportAnyMotion = terminal.getMode(1003);
+            const reportButtonMotion = terminal.getMode(1002) && this.pressedMouseButton !== null;
+            if (!reportAnyMotion && !reportButtonMotion) return;
+
+            const button = this.pressedMouseButton ?? 3;
+            if (sendMouseEvent(event, button, false, true)) consume(event);
+        }, { capture: true, signal });
+
+        termEl.addEventListener('contextmenu', (event: MouseEvent) => {
+            if (terminal.hasMouseTracking() && terminal.getMode(1006)) consume(event);
+        }, { capture: true, signal });
+
+        termEl.ownerDocument.addEventListener('mouseup', (event: MouseEvent) => {
+            const button = this.pressedMouseButton;
+            this.pressedMouseButton = null;
+            if (button !== null && sendMouseEvent(event, button, true)) consume(event);
+        }, { capture: true, signal });
+
+        terminal.attachCustomWheelEventHandler((event: WheelEvent) => {
+            if (!terminal.hasMouseTracking() || !terminal.getMode(1006)) {
+                this.wheelDelta = 0;
+                return false;
+            }
+
+            const canvas = termEl.querySelector('canvas') ?? termEl;
+            const cellHeight = canvas.getBoundingClientRect().height / terminal.rows;
+            const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+                ? event.deltaY
+                : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+                    ? event.deltaY * terminal.rows
+                    : event.deltaY / Math.max(1, cellHeight);
+            if (!delta) return true;
+
+            if (this.wheelDelta && Math.sign(this.wheelDelta) !== Math.sign(delta)) {
+                this.wheelDelta = 0;
+            }
+            this.wheelDelta += delta;
+
+            const steps = Math.max(-5, Math.min(5, Math.trunc(this.wheelDelta)));
+            if (!steps) return true;
+            this.wheelDelta -= steps;
+
+            const button = steps < 0 ? 64 : 65;
+            for (let i = 0; i < Math.abs(steps); i++) {
+                sendMouseEvent(event, button);
+            }
+            return true;
+        });
     }
 
     // ── PTY spawn / recovery (Python-based, no native addons) ─────────────────
@@ -519,6 +636,10 @@ class GhosttyTerminalView extends ItemView {
 
     onClose(): Promise<void> {
         this.resizeObserver?.disconnect();
+        this.mouseAbortController?.abort();
+        this.mouseAbortController = null;
+        this.pressedMouseButton = null;
+        this.wheelDelta = 0;
         this.killPty();
         this.terminal?.dispose?.();
         this.fitAddon?.dispose?.();
