@@ -271,8 +271,9 @@ class GhosttyTerminalView extends ItemView {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 navigator.clipboard.readText().then(text => {
+                    // terminal.paste() wraps in bracketed-paste markers when the app enabled them
                     if (this.ptyAlive && this.ptyProcess?.stdin && text) {
-                        this.ptyProcess.stdin.write(text, 'utf8');
+                        this.terminal?.paste(text);
                     }
                 }).catch(() => {/* ignore */});
 
@@ -537,6 +538,8 @@ const GHOSTTY_BUILTIN_KEYBINDS: GhosttyKeybind[] = [
     // shift+enter / cmd+enter → kitty keyboard protocol newlines (used by Claude etc.)
     { mods: new Set(['shift']), key: 'enter', action: 'text:\x1b[13;2u' },
     { mods: new Set(['super']), key: 'enter', action: 'text:\x1b[13;9u' },
+    // shift+tab → xterm back-tab (CSI Z); the key encoder otherwise emits a plain \t
+    { mods: new Set(['shift']), key: 'tab',   action: 'text:\x1b[Z' },
 ];
 
 /**
